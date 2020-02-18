@@ -1,0 +1,211 @@
+/////////////// MACROS ////////////////
+.macro input meg, len
+	mov r7, #4
+	mov r0, #1
+	ldrb r2, =\len
+	ldr r1, =\meg
+	swi 0
+.endm	
+@Checks the operand for negative numbers and converts them
+.macro neg opa, oph
+	push {r0, r1, r2, r3}
+	ldr r0, =\opa
+	ldr r1, =\oph
+	ldrb r2, [r0]
+	cmp r4, #0x2d
+	ldreqb r3, [r1]
+	mvneq r3, r3 
+	addeq r3, r3, #1
+	streqb r3, [r1] 	
+.endm
+///////////////////////////////////////
+.data
+	op1: .space 4
+	oper: .space 1
+	op2: .space 4
+	operand2_H: .byte 0
+	result_A: .space 10
+	result_H: .word 0
+	operand1_H: .byte 0
+	message: .ascii "Enter the calculation:"
+	invalmes: .ascii "You have an invalid Entry"
+	input: .space 20
+
+.text
+.global main
+
+//////////// GIVEN FUNCTIONS //////////
+// ===== HEX to ASCII conversion ===== 
+// r0 - address of a hex value variable
+// r1 - addrees of a ASCII value variable
+ 
+hex_to_ascii:
+        push    {r1, r2, r3, r5, r6, r7, r8, r9, lr}
+		ldrb	r8, [r0]
+		mov		r9,	r1
+		
+        @ Initialization for hex to ascii
+        mov     r1, r8      @ dividend
+        mov     r2, #10     @ divisor
+        mov     r5, #0      @ counter
+
+        @ Start conversion with dividing by 10
+next_digit:
+		udiv		r3, r1, r2
+		mul		r7, r3, r2
+		sub		r1, r1, r7
+
+        add     r1, r1, #0x30   @ increment by 0x30 to get the ascii value
+        push    {r1}            @ push the converted value into the stack
+        add     r5, r5, #1      @ increment the counter
+        mov     r1, r3          @ update the dividend
+        cmp     r3, #0          @ check whether the conversion is finished
+        bne     next_digit 
+
+        @ Store the converted value into memory
+        mov     r6, r9	
+store_asci:
+        pop     {r1}            @ pop each digit from the stack
+        strb    r1, [r6]        @ store the digit into memory
+        add     r6, r6, #1      @ increment the address
+        sub     r5, r5, #1      @ decrement the counter
+        cmp     r5, #0
+        bne     store_asci
+
+        pop     {r1, r2, r3, r5, r6, r7, r8, r9, lr}
+        bx      lr
+main:
+	@ Print a message
+	mov r7, #4
+	mov r0, #1
+	ldr r2, =23
+	ldr r1, =message
+	swi 0
+	
+	@ Get the string
+	mov r7, #3
+	mov r0, #0
+	mov r2, #20
+	ldr r1, =input
+	ldr r3, =op1
+	ldr r5, =op2
+	ldr r6, =oper
+	mov r11, #0
+	swi 0
+@Main loop that controls the whole program
+loop:
+	ldrb r7, [r6]
+	cmp r7, #0x30
+	ldrb r2, [r1], #1
+	movlt r11, #0	
+	cmp r2, #0x20
+	beq loop
+	cmp r2, #0x00
+	beq calc
+	cmp r2, #0x39
+	bgt invalid
+	blt checklow
+
+@Outputs message on invalid input
+invalid:
+	push {r0, r1, r2, r7}
+	mov r7, #4
+	mov r0, #1
+	ldr r2, =23
+	ldr r1, =invalmes
+	swi 0
+	pop {r0, r1, r2, r7}
+	bal end
+@Checks lower number bound
+checklow:
+	cmp r2, #0x30
+	bgt num
+	movlt r11, #1
+	blt checkop
+
+@Current value has been deteremined a numbers, this function places it in either the first or second operand
+num:	
+	ldr r4, =oper
+	ldrb r4, [r4]
+	cmp r4, #0x00
+	streqb r2, [r3], #1
+	strgtb r2, [r5], #1
+	bal loop
+@Determines the entered operator
+checkop:
+	cmp r11, #1
+	blt num
+	ldr r4, =oper
+	cmp r2, #0x2a
+	streqb r2, [r4]
+	cmp r2, #0x2b
+	streqb r2, [r4]
+	cmp r2, #0x2d
+	streqb r2, [r4]
+	cmp r2, #0x2f
+	streqb r2, [r4]
+	bal loop
+
+@sets up the varliables for conversion from ascii to hex
+calc:
+	ldr r2, =op1
+	ldr r3, =operand1_H
+	bl convert
+	ldr r2, =op2
+	ldr r3, =operand2_H
+	bl convert
+	neg op1, operand1_H
+	neg op2, operand2_H
+	ldr r2, =oper
+	ldr r0, =operand1_H
+	ldr r1, =operand2_H
+	ldrb r0, [r0]
+	ldrb r1, [r1]
+	bl finalres
+
+@converts input from ascii to hex
+convert:
+	mov r1, #0
+	mov r0, #0
+	push {r4,r5,r11}
+	mov r4, #10
+	conv:ldrb r5, [r2], #1
+	cmp r5, #0x00
+	beq stop
+	sub r5, r5, #0x30
+	mul r0, r1, r4
+	add r1, r0, r5
+	bgt conv 
+	stop: popge {r2,r4,r5,r11}
+	mov r0, r1
+	str r0, [r3]
+	bx lr
+
+
+@ Calculates the Final  hex result, converts it back to ascii and outputs the final answer
+finalres:	
+	ldrb r6, [r2]
+	cmp r6, #0x2b
+	addeqs r3, r0, r1
+	cmp r6, #0x2d
+	subeqs r3, r0, r1
+	cmp r6, #0x2a
+	muleqs r3, r0, r1
+	cmp r6, #0x2f
+	sdiveq r3, r0, r1
+	
+	ldr r1, =result_H
+	str r3, [r1]
+	ldr r0, =result_H
+	ldr r1, =result_A
+	bl hex_to_ascii
+
+	mov r7, #4
+	mov r0, #1
+	ldr r2, =16
+	ldr r1, =result_A
+	swi 0
+end:
+	@ exit system call
+	mov r7, #1
+	swi 0
